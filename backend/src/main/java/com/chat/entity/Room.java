@@ -12,6 +12,9 @@ public class Room {
     @Column(length = 6)
     private String roomNumber;
     
+    @Column(length = 50)
+    private String password;
+    
     private LocalDateTime createdAt;
     
     @PrePersist

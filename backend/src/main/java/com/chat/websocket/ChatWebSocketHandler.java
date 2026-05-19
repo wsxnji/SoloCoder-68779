@@ -2,6 +2,7 @@ package com.chat.websocket;
 
 import com.alibaba.fastjson2.JSON;
 import com.chat.dto.ChatMessage;
+import com.chat.entity.Message;
 import com.chat.entity.User;
 import com.chat.service.RoomService;
 import lombok.RequiredArgsConstructor;
@@ -30,6 +31,8 @@ public class ChatWebSocketHandler implements WebSocketHandler {
         roomSessions.computeIfAbsent(roomNumber, k -> new ConcurrentHashMap<>())
                 .put(sessionId, session);
         
+        sendHistoryMessages(session, roomNumber);
+        
         ChatMessage joinMessage = new ChatMessage();
         joinMessage.setType("SYSTEM");
         joinMessage.setContent("用户 " + nickname + " 加入了房间");
@@ -41,6 +44,37 @@ public class ChatWebSocketHandler implements WebSocketHandler {
         sendMessageToRoom(roomNumber, JSON.toJSONString(joinMessage));
         
         broadcastUserList(roomNumber);
+    }
+    
+    private void sendHistoryMessages(WebSocketSession session, String roomNumber) {
+        try {
+            List<Message> historyMessages = roomService.getRecentMessages(roomNumber, 5);
+            for (Message msg : historyMessages) {
+                ChatMessage chatMessage = new ChatMessage();
+                chatMessage.setType(msg.getType());
+                chatMessage.setContent(msg.getContent());
+                chatMessage.setSender(msg.getSenderId());
+                chatMessage.setRoomNumber(msg.getRoomId());
+                chatMessage.setTimestamp(msg.getCreatedAt().format(DateTimeFormatter.ofPattern("HH:mm:ss")));
+                chatMessage.setSessionId(msg.getId().toString());
+                
+                if (session.isOpen()) {
+                    session.sendMessage(new TextMessage(JSON.toJSONString(chatMessage)));
+                }
+            }
+            
+            ChatMessage historyEnd = new ChatMessage();
+            historyEnd.setType("HISTORY_END");
+            historyEnd.setContent("");
+            historyEnd.setSender("系统");
+            historyEnd.setRoomNumber(roomNumber);
+            historyEnd.setTimestamp(LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss")));
+            if (session.isOpen()) {
+                session.sendMessage(new TextMessage(JSON.toJSONString(historyEnd)));
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
     
     @Override
@@ -62,11 +96,14 @@ public class ChatWebSocketHandler implements WebSocketHandler {
                 return;
             }
             
+            String msgType = chatMessage.getType() != null ? chatMessage.getType() : "CHAT";
             chatMessage.setSender(nickname);
             chatMessage.setRoomNumber(roomNumber);
             chatMessage.setTimestamp(LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss")));
             chatMessage.setSessionId(sessionId);
-            chatMessage.setType("CHAT");
+            chatMessage.setType(msgType);
+            
+            roomService.saveMessage(roomNumber, nickname, chatMessage.getContent(), msgType);
             
             sendMessageToRoom(roomNumber, JSON.toJSONString(chatMessage));
         } catch (Exception e) {

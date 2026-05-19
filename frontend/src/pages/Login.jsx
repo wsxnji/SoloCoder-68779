@@ -10,6 +10,9 @@ function Login() {
   const [nickname, setNickname] = useState('')
   const [roomNumber, setRoomNumber] = useState('')
   const [createdRoomNumber, setCreatedRoomNumber] = useState('')
+  const [password, setPassword] = useState('')
+  const [roomPassword, setRoomPassword] = useState('')
+  const [passwordRequired, setPasswordRequired] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const navigate = useNavigate()
@@ -19,7 +22,13 @@ function Login() {
       setLoading(true)
       setError('')
       const response = await fetch('/api/room/create', {
-        method: 'POST'
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          password: password.trim() || undefined
+        })
       })
       if (!response.ok) {
         throw new Error('创建房间失败')
@@ -45,6 +54,11 @@ function Login() {
 
     if (!nickname.trim()) {
       setError('请输入昵称')
+      return
+    }
+
+    if (nickname.trim().length < 2 || nickname.trim().length > 50) {
+      setError('昵称长度必须在2-50个字符之间')
       return
     }
 
@@ -76,6 +90,13 @@ function Login() {
         return
       }
 
+      const submitPassword = tab === 'create' ? password : roomPassword
+      if (tab === 'join' && checkData.passwordRequired && !submitPassword.trim()) {
+        setError('该房间需要密码')
+        setLoading(false)
+        return
+      }
+
       const sessionId = generateSessionId()
       const joinResponse = await fetch('/api/room/join', {
         method: 'POST',
@@ -85,7 +106,8 @@ function Login() {
         body: JSON.stringify({
           roomNumber: trimmedRoomNum,
           nickname: nickname.trim(),
-          sessionId
+          sessionId,
+          password: submitPassword.trim() || undefined
         })
       })
 
@@ -102,6 +124,20 @@ function Login() {
     }
   }
 
+  const checkRoomPasswordRequired = async (roomNum) => {
+    if (roomNum.trim().length === 6 && /^\d{6}$/.test(roomNum.trim())) {
+      try {
+        const response = await fetch(`/api/room/check/${encodeURIComponent(roomNum.trim())}`)
+        const data = await response.json()
+        setPasswordRequired(data.passwordRequired || false)
+      } catch (err) {
+        setPasswordRequired(false)
+      }
+    } else {
+      setPasswordRequired(false)
+    }
+  }
+
   return (
     <div className="login-container">
       <div className="login-card">
@@ -115,6 +151,9 @@ function Login() {
               setTab('create')
               setCreatedRoomNumber('')
               setRoomNumber('')
+              setPassword('')
+              setRoomPassword('')
+              setPasswordRequired(false)
               setError('')
             }}
           >
@@ -126,6 +165,9 @@ function Login() {
               setTab('join')
               setCreatedRoomNumber('')
               setRoomNumber('')
+              setPassword('')
+              setRoomPassword('')
+              setPasswordRequired(false)
               setError('')
             }}
           >
@@ -143,29 +185,58 @@ function Login() {
                 <span>{createdRoomNumber}</span>
               </div>
             ) : (
-              <button 
-                className="btn btn-secondary"
-                onClick={createRoom}
-                disabled={loading}
-              >
-                {loading ? '生成中...' : '生成房间号'}
-              </button>
+              <div>
+                <div className="form-group" style={{ marginBottom: '12px' }}>
+                  <label>房间密码（可选）</label>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="不设置密码可直接加入"
+                    maxLength={50}
+                  />
+                </div>
+                <button 
+                  className="btn btn-secondary"
+                  onClick={createRoom}
+                  disabled={loading}
+                >
+                  {loading ? '生成中...' : '生成房间号'}
+                </button>
+              </div>
             )}
           </div>
         )}
 
         <form onSubmit={handleSubmit}>
           {tab === 'join' && (
-            <div className="form-group">
-              <label>房间号</label>
-              <input
-                type="text"
-                value={roomNumber}
-                onChange={(e) => setRoomNumber(e.target.value)}
-                placeholder="请输入6位房间号"
-                maxLength={6}
-              />
-            </div>
+            <>
+              <div className="form-group">
+                <label>房间号</label>
+                <input
+                  type="text"
+                  value={roomNumber}
+                  onChange={(e) => {
+                    setRoomNumber(e.target.value)
+                    checkRoomPasswordRequired(e.target.value)
+                  }}
+                  placeholder="请输入6位房间号"
+                  maxLength={6}
+                />
+              </div>
+              {passwordRequired && (
+                <div className="form-group">
+                  <label>房间密码</label>
+                  <input
+                    type="password"
+                    value={roomPassword}
+                    onChange={(e) => setRoomPassword(e.target.value)}
+                    placeholder="请输入房间密码"
+                    maxLength={50}
+                  />
+                </div>
+              )}
+            </>
           )}
           
           <div className="form-group">
@@ -174,9 +245,12 @@ function Login() {
               type="text"
               value={nickname}
               onChange={(e) => setNickname(e.target.value)}
-              placeholder="请输入您的昵称"
-              maxLength={20}
+              placeholder="请输入您的昵称（2-50个字符）"
+              maxLength={50}
             />
+            <div style={{ fontSize: '12px', color: '#999', marginTop: '4px' }}>
+              {nickname.trim().length}/50
+            </div>
           </div>
 
           <button 
